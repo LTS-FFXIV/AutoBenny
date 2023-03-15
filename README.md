@@ -23,4 +23,4 @@ Support
 For support or to report any issues with the AutoBenny plugin, please open an issue on the plugin's GitHub repository.
 
 # License
-AutoBenny is released under the MIT License.
+AutoBenny is released under no license because im lazy
