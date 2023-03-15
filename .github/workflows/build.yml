@@ -27,7 +27,7 @@ jobs:
 
     - name: Build
       run: dotnet build --configuration Release --no-restore --project AutoBenny.csproj
-
+      working-directory:/AutoBenny/
     - name: Publish
       run: dotnet publish --configuration Release --no-build --output ./publish
 
