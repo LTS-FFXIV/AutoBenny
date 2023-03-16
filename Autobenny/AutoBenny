@@ -1,116 +1,85 @@
-using System;
-using System.Text;
-using System.Threading.Tasks;
-using Dalamud.Configuration;
-using Dalamud.Game;
-using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Game.ClientState;
+using Dalamud.Game.ClientState.Actors.Types;
+using Dalamud.Game.ClientState.Party;
 using Dalamud.Game.Command;
+using Dalamud.Game.Framework;
 using Dalamud.Plugin;
+using System;
+using System.Linq;
 
-namespace AutoBenny
+namespace AutoBenniPlugin
 {
-    public class AutoBennyPlugin : IDalamudPlugin
+    public class AutoBenni : IDalamudPlugin
     {
-        private DalamudPluginInterface pluginInterface;
-        private PluginConfiguration config;
-        private bool isBenedictionOnCooldown = false;
-        private bool isEnabled = true;
+        private const int BenedictionActionId = 140;
 
-        public string Name => "Auto Benny Plugin";
+        private DalamudPluginInterface pi;
+        private ClientState clientState;
+        private Framework framework;
+        private PartyList partyList;
+        private int healthThreshold = 0;
+
+        public string Name => "AutoBenni";
 
         public void Initialize(DalamudPluginInterface pluginInterface)
         {
-            this.pluginInterface = pluginInterface;
-            this.config = this.pluginInterface.GetPluginConfig() as PluginConfiguration ?? new PluginConfiguration();
-            pluginInterface.Framework.OnUpdateEvent += OnUpdate;
+            pi = pluginInterface;
+            clientState = pluginInterface.ClientState;
+            framework = pluginInterface.Framework;
+            partyList = pluginInterface.ClientState.PartyList;
 
-            this.pluginInterface.CommandManager.AddHandler("/benny", new CommandInfo(OnTogglePlugin)
+            framework.Update += OnUpdateEvent;
+            pi.CommandManager.AddHandler("/benny", new CommandInfo(OnBennyCommand)
             {
-                HelpMessage = "Toggle Auto Benny Plugin." 
-            });
-
-            this.pluginInterface.CommandManager.AddHandler("/bennyhealth", new CommandInfo(OnSetHealthThreshold)
-            {
-                HelpMessage = "Set the health threshold for Auto Benny. Usage: /bennyhealth <value>"
+                HelpMessage = "Set the health threshold percentage for Benediction. Usage: /benny <percentage>",
+                ShowInHelp = true
             });
         }
 
-        private void OnTogglePlugin(string command, string arguments)
+        private void OnBennyCommand(string command, string args)
         {
-            isEnabled = !isEnabled;
-            this.pluginInterface.Framework.Gui.Chat.Print($"Auto Benny is now {(isEnabled ? "enabled" : "disabled")}.");
-        }
-
-        private void OnSetHealthThreshold(string command, string arguments)
-        {
-            if (int.TryParse(arguments, out int threshold) && threshold >= 0 && threshold <= 100)
+            if (int.TryParse(args, out int newThreshold) && newThreshold >= 0 && newThreshold <= 100)
             {
-                config.HealthThreshold = threshold / 100f;
-                config.Save();
-                this.pluginInterface.Framework.Gui.Chat.Print($"Health threshold for Auto Benny set to {threshold}%.");
+                healthThreshold = newThreshold;
+                pi.Framework.Gui.Chat.Print($"Health threshold for Benediction set to {healthThreshold}%.");
             }
             else
             {
-                StringBuilder sb = new StringBuilder();
-                sb.AppendFormat("Invalid input. Usage: {0} <value>", command);
-                sb.AppendLine();
-                sb.Append("Value must be between 0 and 100.");
-                this.pluginInterface.Framework.Gui.Chat.PrintError(sb.ToString());
+                pi.Framework.Gui.Chat.Print("Invalid argument. Usage: /benny <percentage>");
             }
         }
 
-        private async void OnUpdate(Framework framework)
+        private void OnUpdateEvent(Framework framework)
         {
-            if (isBenedictionOnCooldown || !isEnabled)
+            if (!clientState.IsLoggedIn || clientState.LocalPlayer == null || clientState.LocalPlayer.ClassJob.Id != 24)
             {
                 return;
             }
 
-            var partyList = this.pluginInterface.ClientState.PartyList;
+            var target = partyList
+                .Where(member => member.ObjectId != clientState.LocalPlayer.ObjectId)
+                .Select(member => pi.ClientState.Actors.GetActorByObjectId(member.ObjectId))
+                .OfType<PlayerCharacter>()
+                .FirstOrDefault(member => (float)member.CurrentHp / member.MaxHp * 100 <= healthThreshold);
 
-            foreach (var member in partyList)
+            if (target != null)
             {
-                var character = member.GameObject as Character;
-
-                if (character == null)
-                    continue;
-
-                float healthPercentage = (float)character.CurrentHp / character.MaxHp;
-
-                if (healthPercentage < config.HealthThreshold)
-                {
-                    CastBenediction(character);
-                    
-                    isBenedictionOnCooldown = true;
-                    await Task.Delay(180000);
-                    isBenedictionOnCooldown = false;
-                }
+                CastBenediction(clientState.LocalPlayer.ObjectId, target.ObjectId);
             }
         }
 
-        private void CastBenediction(Character target)
+        private void CastBenediction(uint sourceId, uint targetId)
         {
-            string command = $"/ac \"Benediction\" <{target.ObjectId}>";
-            this.pluginInterface.CommandManager.ProcessCommand(command);
+            pi.Framework.Gui.Chat.Print($"Casting Benediction on {targetId}");
+            // Perform the action by sending a command to the game chat
+            pi.CommandManager.ProcessCommand($"/ac \"Benediction\" <{targetId}>");
         }
 
         public void Dispose()
         {
-            pluginInterface.Framework.OnUpdateEvent -= OnUpdate;
-            pluginInterface.CommandManager.RemoveHandler("/benny");
-            pluginInterface.CommandManager.RemoveHandler("/bennyhealth");
-            pluginInterface.Dispose();
+            framework.Update -= OnUpdateEvent;
+            pi.CommandManager.RemoveHandler("/benny");
+            pi.Dispose();
         }
     }
-
-    public class PluginConfiguration : IPluginConfiguration
-    {
-        public int Version { get; set; } = 1;
-        public float HealthThreshold { get; set; } = 0.2f;
-
-        public void Save()
-        {
-            // Replace with the proper plugin name and version
-            AutoBennyPluginInterface.SavePluginConfig(this);
-        }
-    }
+}
