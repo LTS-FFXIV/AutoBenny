@@ -1,0 +1,13 @@
+{
+  "Author": "LTS-FFXIV",
+  "Name": "AutoBenny",
+  "Punchline": "Automatic Benediction Casting.",
+  "Description": "idk",
+  "InternalName": "AutoBenny",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "sample",
+    "plugin",
+    "goats"
+  ]
+}
